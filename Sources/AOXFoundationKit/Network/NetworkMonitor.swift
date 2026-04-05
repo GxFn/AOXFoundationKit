@@ -120,7 +120,7 @@ public final class NetworkMonitor: @unchecked Sendable {
             self.currentStatus = newStatus
 
             if oldStatus != newStatus {
-                Logger.network.info("网络状态变化: \(oldStatus.localizedDescription) -> \(newStatus.localizedDescription)")
+                FoundationLogger.network.info("网络状态变化: \(oldStatus.localizedDescription) -> \(newStatus.localizedDescription)")
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
                         name: NetworkMonitor.statusDidChangeNotification,
@@ -140,7 +140,7 @@ public final class NetworkMonitor: @unchecked Sendable {
         }
 
         monitor.start(queue: monitorQueue)
-        Logger.network.debug("开始监测网络状态")
+        FoundationLogger.network.debug("开始监测网络状态")
     }
 
     public func stopMonitoring() {
@@ -151,7 +151,7 @@ public final class NetworkMonitor: @unchecked Sendable {
         }
         guard shouldStop else { return }
         monitor.cancel()
-        Logger.network.debug("停止监测网络状态")
+        FoundationLogger.network.debug("停止监测网络状态")
     }
 
     // MARK: - Convenience
