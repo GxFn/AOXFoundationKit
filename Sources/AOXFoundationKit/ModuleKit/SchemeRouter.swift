@@ -63,7 +63,7 @@ public final class SchemeRouter {
     private let maxDispatchDepth = 10
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "BDModuleKit",
+        subsystem: Bundle.main.bundleIdentifier ?? "AOXModuleKit",
         category: "SchemeRouter"
     )
 

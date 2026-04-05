@@ -17,11 +17,11 @@ extension UITableViewHeaderFooterView: Reusable {}
 // MARK: - UITableView Convenience
 
 public extension UITableView {
-    func bd_register<T: UITableViewCell>(_ cellType: T.Type) {
+    func aox_register<T: UITableViewCell>(_ cellType: T.Type) {
         register(cellType, forCellReuseIdentifier: T.reuseIdentifier)
     }
 
-    func bd_dequeueCell<T: UITableViewCell>(_ cellType: T.Type, for indexPath: IndexPath) -> T {
+    func aox_dequeueCell<T: UITableViewCell>(_ cellType: T.Type, for indexPath: IndexPath) -> T {
         // swiftlint:disable:next force_cast
         dequeueReusableCell(withIdentifier: T.reuseIdentifier, for: indexPath) as! T
     }
@@ -30,11 +30,11 @@ public extension UITableView {
 // MARK: - UICollectionView Convenience
 
 public extension UICollectionView {
-    func bd_register<T: UICollectionViewCell>(_ cellType: T.Type) {
+    func aox_register<T: UICollectionViewCell>(_ cellType: T.Type) {
         register(cellType, forCellWithReuseIdentifier: T.reuseIdentifier)
     }
 
-    func bd_dequeueCell<T: UICollectionViewCell>(_ cellType: T.Type, for indexPath: IndexPath) -> T {
+    func aox_dequeueCell<T: UICollectionViewCell>(_ cellType: T.Type, for indexPath: IndexPath) -> T {
         // swiftlint:disable:next force_cast
         dequeueReusableCell(withReuseIdentifier: T.reuseIdentifier, for: indexPath) as! T
     }

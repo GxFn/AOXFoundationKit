@@ -64,7 +64,7 @@ public final class ServiceRegistry: @unchecked Sendable {
     #endif
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "BDModuleKit",
+        subsystem: Bundle.main.bundleIdentifier ?? "AOXModuleKit",
         category: "ServiceRegistry"
     )
 

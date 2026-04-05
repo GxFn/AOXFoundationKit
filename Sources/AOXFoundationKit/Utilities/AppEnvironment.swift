@@ -41,12 +41,48 @@ public enum AppEnvironment: String, Sendable {
 
     // MARK: - API Configuration
 
-    /// B 站主 API 域名
-    public var apiBaseURL: String { "https://api.bilibili.com" }
+    /// API 基础 URL 配置，由宿主 App 通过 `AppEnvironment.configure(apiConfig:)` 注入
+    public struct APIConfig: Sendable {
+        public let apiBaseURL: String
+        public let appBaseURL: String
+        public let liveBaseURL: String
 
-    /// B 站 App API 域名（feed 流专用）
-    public var appBaseURL: String { "https://app.bilibili.com" }
+        public init(apiBaseURL: String, appBaseURL: String, liveBaseURL: String) {
+            self.apiBaseURL = apiBaseURL
+            self.appBaseURL = appBaseURL
+            self.liveBaseURL = liveBaseURL
+        }
+    }
 
-    /// B 站直播 API 域名
-    public var liveBaseURL: String { "https://api.live.bilibili.com" }
+    /// 当前 API 配置（宿主 App 必须在启动时调用 `configure(apiConfig:)` 设置）
+    private nonisolated(unsafe) static var _apiConfig: APIConfig?
+
+    /// 配置 API 基础 URL
+    public static func configure(apiConfig: APIConfig) {
+        _apiConfig = apiConfig
+    }
+
+    /// API 基础 URL
+    public var apiBaseURL: String {
+        guard let config = Self._apiConfig else {
+            fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing apiBaseURL")
+        }
+        return config.apiBaseURL
+    }
+
+    /// App API 基础 URL
+    public var appBaseURL: String {
+        guard let config = Self._apiConfig else {
+            fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing appBaseURL")
+        }
+        return config.appBaseURL
+    }
+
+    /// 直播 API 基础 URL
+    public var liveBaseURL: String {
+        guard let config = Self._apiConfig else {
+            fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing liveBaseURL")
+        }
+        return config.liveBaseURL
+    }
 }

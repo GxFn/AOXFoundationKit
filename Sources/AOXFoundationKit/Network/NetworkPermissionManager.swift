@@ -3,7 +3,7 @@ import CoreTelephony
 
 // MARK: - Network Permission State
 
-/// 网络权限状态（对应 BiliDemo 的 BDNetworkPermissionState）
+/// 网络权限状态
 public enum NetworkPermissionState: Int, Sendable {
     case unknown = 0       // 未知（首次安装，未确定）
     case restricted = 1    // 受限（用户拒绝了网络权限）
@@ -12,13 +12,13 @@ public enum NetworkPermissionState: Int, Sendable {
 
 // MARK: - Network Permission Manager
 
-/// 网络权限管理器（对应 BiliDemo 的 BDNetworkPermissionManager）
+/// 网络权限管理器
 /// 检测首次安装时的网络权限状态，引导用户授权
 public final class NetworkPermissionManager: @unchecked Sendable {
 
     public static let shared = NetworkPermissionManager()
 
-    private static let firstLaunchKey = "BDNetworkPermissionFirstLaunchHandled"
+    private static let firstLaunchKey = "AOXNetworkPermissionFirstLaunchHandled"
 
     /// 当前网络权限状态
     public private(set) var permissionState: NetworkPermissionState = .unknown

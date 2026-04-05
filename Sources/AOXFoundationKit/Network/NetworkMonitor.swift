@@ -6,7 +6,7 @@ import Combine
 
 // MARK: - Network Status
 
-/// 网络状态枚举（对应 BiliDemo 的 BDNetworkStatus）
+/// 网络状态枚举
 public enum NetworkStatus: Int, Sendable {
     case unknown = -1
     case notReachable = 0
@@ -42,14 +42,14 @@ public enum NetworkStatus: Int, Sendable {
 
 // MARK: - Network Monitor
 
-/// 网络状态监测器（对应 BiliDemo 的 BDNetworkMonitor）
+/// 网络状态监测器
 /// 使用 NWPathMonitor 实现（iOS 12+ 原生 API，替代 SCNetworkReachability）
 public final class NetworkMonitor: @unchecked Sendable {
 
     public static let shared = NetworkMonitor()
 
     /// 网络状态变化通知
-    public static let statusDidChangeNotification = Notification.Name("BDNetworkStatusDidChangeNotification")
+    public static let statusDidChangeNotification = Notification.Name("AOXNetworkStatusDidChangeNotification")
 
     /// 当前网络状态
     private var _currentStatus: NetworkStatus = .unknown
@@ -71,7 +71,7 @@ public final class NetworkMonitor: @unchecked Sendable {
     }
 
     private let monitor = NWPathMonitor()
-    private let monitorQueue = DispatchQueue(label: "com.bilidili.network.monitor")
+    private let monitorQueue = DispatchQueue(label: "com.aoxkit.network.monitor")
     private var cancellables = Set<AnyCancellable>()
 
     private init() {

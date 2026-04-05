@@ -8,7 +8,7 @@ public final class ThreadSafeDictionary<Key: Hashable, Value>: @unchecked Sendab
     private var storage: [Key: Value] = [:]
     private let queue: DispatchQueue
 
-    public init(label: String = "com.bilidili.threadsafe-dict") {
+    public init(label: String = "com.aoxkit.threadsafe-dict") {
         self.queue = DispatchQueue(label: label, attributes: .concurrent)
     }
 

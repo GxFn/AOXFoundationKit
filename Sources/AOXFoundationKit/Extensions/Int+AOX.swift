@@ -4,7 +4,7 @@ import Foundation
 
 public extension Int {
     /// 格式化为短数字，如 1.2万、352.1万
-    var bd_shortText: String {
+    var aox_shortText: String {
         if self >= 100_000_000 {
             return String(format: "%.1f亿", Double(self) / 100_000_000)
         } else if self >= 10_000 {
@@ -14,7 +14,7 @@ public extension Int {
     }
 
     /// 时长格式化，如 02:30、1:02:30
-    var bd_durationText: String {
+    var aox_durationText: String {
         let hours = self / 3600
         let minutes = (self % 3600) / 60
         let seconds = self % 60
@@ -29,7 +29,7 @@ public extension Int {
 
 public extension TimeInterval {
     /// 时长格式化，如 02:30、1:02:30
-    var bd_durationText: String {
-        Int(self).bd_durationText
+    var aox_durationText: String {
+        Int(self).aox_durationText
     }
 }

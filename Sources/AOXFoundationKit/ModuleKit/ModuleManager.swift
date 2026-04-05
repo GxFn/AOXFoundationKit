@@ -5,7 +5,6 @@ import os
 
 /// 模块生命周期管理器
 ///
-/// 对应 BiliDemo 的 BDPyramid + BDPModuleCenter。
 /// 管理所有模块的注册、初始化、清理，以及系统事件转发。
 ///
 /// **生命周期流程**:
@@ -34,12 +33,12 @@ public final class ModuleManager {
     public var initializeDelay: TimeInterval = 3.0
 
     private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "BDModuleKit",
+        subsystem: Bundle.main.bundleIdentifier ?? "AOXModuleKit",
         category: "ModuleManager"
     )
 
     private static let signposter = OSSignposter(
-        subsystem: Bundle.main.bundleIdentifier ?? "BDModuleKit",
+        subsystem: Bundle.main.bundleIdentifier ?? "AOXModuleKit",
         category: .pointsOfInterest
     )
 
