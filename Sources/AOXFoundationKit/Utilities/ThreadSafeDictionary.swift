@@ -18,8 +18,9 @@ public final class ThreadSafeDictionary<Key: Hashable, Value>: @unchecked Sendab
             queue.sync { storage[key] }
         }
         set {
-            queue.async(flags: .barrier) { [weak self] in
-                self?.storage[key] = newValue
+            // 写入方法返回时必须已经完成，否则调用方紧接着读取会看到旧值。
+            queue.sync(flags: .barrier) {
+                storage[key] = newValue
             }
         }
     }
@@ -31,8 +32,9 @@ public final class ThreadSafeDictionary<Key: Hashable, Value>: @unchecked Sendab
 
     /// 写入值
     public func setValue(_ value: Value?, forKey key: Key) {
-        queue.async(flags: .barrier) { [weak self] in
-            self?.storage[key] = value
+        // 保持与 removeValue/getOrInsert 一致的同步可见性。
+        queue.sync(flags: .barrier) {
+            storage[key] = value
         }
     }
 
@@ -44,8 +46,9 @@ public final class ThreadSafeDictionary<Key: Hashable, Value>: @unchecked Sendab
 
     /// 移除所有值
     public func removeAll() {
-        queue.async(flags: .barrier) { [weak self] in
-            self?.storage.removeAll()
+        // 清空后通常会立刻读取 count/keys，因此这里不能异步延后执行。
+        queue.sync(flags: .barrier) {
+            storage.removeAll()
         }
     }
 

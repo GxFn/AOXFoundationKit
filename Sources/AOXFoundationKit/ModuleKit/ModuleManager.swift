@@ -32,6 +32,9 @@ public final class ModuleManager {
     /// 延迟初始化的时间间隔（默认 3 秒）
     public var initializeDelay: TimeInterval = 3.0
 
+    /// 系统通知 observer token。block observer 必须持有 token 并显式移除，否则重复启动会叠加广播。
+    private var systemEventObservers: [NSObjectProtocol] = []
+
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "AOXModuleKit",
         category: "ModuleManager"
@@ -190,20 +193,44 @@ public final class ModuleManager {
     /// ModuleManager.shared.startSystemEventForwarding()
     /// ```
     public func startSystemEventForwarding() {
+        guard systemEventObservers.isEmpty else {
+            Self.logger.debug("系统事件转发已启动，忽略重复调用")
+            return
+        }
+
         let nc = NotificationCenter.default
 
-        nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.broadcast(ModuleEvent(name: "applicationDidBecomeActive"))
+        systemEventObservers = [
+            nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.broadcast(ModuleEvent(name: "applicationDidBecomeActive"))
+            },
+            nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.broadcast(ModuleEvent(name: "applicationDidEnterBackground"))
+            },
+            nc.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.tearDownAll()
+            },
+            nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.broadcast(ModuleEvent(name: "didReceiveMemoryWarning"))
+            },
+        ]
+
+        Self.logger.info("系统事件转发已启动: observers=\(self.systemEventObservers.count)")
+    }
+
+    /// 停止系统事件转发。
+    ///
+    /// 测试或模块重置时调用，避免旧 observer 继续向已清空的模块列表广播。
+    public func stopSystemEventForwarding() {
+        guard !systemEventObservers.isEmpty else { return }
+
+        let count = systemEventObservers.count
+        let nc = NotificationCenter.default
+        for observer in systemEventObservers {
+            nc.removeObserver(observer)
         }
-        nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.broadcast(ModuleEvent(name: "applicationDidEnterBackground"))
-        }
-        nc.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.tearDownAll()
-        }
-        nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.broadcast(ModuleEvent(name: "didReceiveMemoryWarning"))
-        }
+        systemEventObservers.removeAll()
+        Self.logger.info("系统事件转发已停止: observers=\(count)")
     }
 
     // MARK: - Lifecycle: Teardown
@@ -230,6 +257,7 @@ public final class ModuleManager {
 
     /// 重置（仅测试用）
     public func reset() {
+        stopSystemEventForwarding()
         tearDownAll()
         modules.removeAll()
         context = nil
