@@ -70,7 +70,9 @@ public final class NetworkMonitor: @unchecked Sendable {
         statusLock.withLock { _isMonitoring }
     }
 
-    private let monitor = NWPathMonitor()
+    // NWPathMonitor 一旦 cancel() 就不能再 start()（Apple 要求 cancel 后新建实例），
+    // 因此不能用 let 复用同一实例，需在每次 startMonitoring 时重建。
+    private var monitor: NWPathMonitor?
     private let monitorQueue = DispatchQueue(label: "com.aoxkit.network.monitor")
     private var cancellables = Set<AnyCancellable>()
 
@@ -100,6 +102,10 @@ public final class NetworkMonitor: @unchecked Sendable {
         }
         guard shouldStart else { return }
 
+        // 每次开始监测都新建实例：进入后台会 cancel()，复用已 cancel 的实例时 start() 无效，
+        // 会导致回前台后网络状态永久冻结在旧值。
+        let monitor = NWPathMonitor()
+        self.monitor = monitor
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             let oldStatus = self.currentStatus
@@ -150,7 +156,8 @@ public final class NetworkMonitor: @unchecked Sendable {
             return true
         }
         guard shouldStop else { return }
-        monitor.cancel()
+        monitor?.cancel()
+        monitor = nil
         FoundationLogger.network.debug("停止监测网络状态")
     }
 

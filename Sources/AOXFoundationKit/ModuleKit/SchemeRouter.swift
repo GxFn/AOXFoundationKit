@@ -58,8 +58,7 @@ public final class SchemeRouter {
     /// 当前视图控制器提供者（用于 present）
     public var topViewControllerProvider: (() -> UIViewController?)?
 
-    /// 递归分发深度限制
-    private var dispatchDepth = 0
+    /// 递归分发深度限制（backup/next 链式递归的最大层数）
     private let maxDispatchDepth = 10
 
     private static let logger = Logger(
@@ -165,8 +164,24 @@ public final class SchemeRouter {
         source: RouteSource = .app,
         userInfo: [String: Any] = [:]
     ) async -> RouteResult {
+        await dispatch(url: url, source: source, userInfo: userInfo, depth: 0)
+    }
+
+    /// 内部分发：`depth` 随 backup/next 链式递归逐层 +1。
+    ///
+    /// 旧实现用共享实例变量 `dispatchDepth` 且在中间件链后就 -1，导致 backup/next 递归
+    /// 完全不受 `maxDispatchDepth` 约束（可无限深递归堆积 continuation），并发 open() 之间
+    /// 还会因 await 挂起交错污染计数（把并发广度误判成递归深度）。改为按调用链传参，
+    /// 把 backup/next 递归纳入同一深度预算，且无共享可变状态。
+    @discardableResult
+    private func dispatch(
+        url: URL,
+        source: RouteSource,
+        userInfo: [String: Any],
+        depth: Int
+    ) async -> RouteResult {
         // 递归深度检查
-        guard dispatchDepth < maxDispatchDepth else {
+        guard depth < maxDispatchDepth else {
             Self.logger.error("❌ 路由递归分发超过 \(self.maxDispatchDepth) 层，中止: \(url.absoluteString)")
             return .failure(.handlerError("递归分发深度超限"))
         }
@@ -181,18 +196,16 @@ public final class SchemeRouter {
         applyRedirect(&route)
 
         // 3. 执行中间件链 + 最终分发
-        dispatchDepth += 1
         let result = await executeMiddlewareChain(route: &route, index: 0)
-        dispatchDepth -= 1
 
-        // 4. 降级处理 (backup)
+        // 4. 降级处理 (backup) —— 纳入同一深度预算
         if !result.isSuccess, let backup = route.param("backup"),
            let backupURL = URL(string: backup) {
             Self.logger.info("路由失败，执行降级: \(backup)")
-            return await dispatch(url: backupURL, source: source, userInfo: userInfo)
+            return await dispatch(url: backupURL, source: source, userInfo: userInfo, depth: depth + 1)
         }
 
-        // 5. 链式调起 (next)
+        // 5. 链式调起 (next) —— 纳入同一深度预算
         if result.isSuccess, let next = route.param("next"),
            let nextURL = URL(string: next) {
             let delay = Double(route.param("delaytime") ?? "") ?? 0.35
@@ -200,7 +213,7 @@ public final class SchemeRouter {
                 try? await Task.sleep(for: .seconds(delay))
             }
             Self.logger.info("链式调起: \(next)")
-            return await dispatch(url: nextURL, source: source, userInfo: userInfo)
+            return await dispatch(url: nextURL, source: source, userInfo: userInfo, depth: depth + 1)
         }
 
         // 6. 通知观察者
@@ -282,11 +295,12 @@ public final class SchemeRouter {
         // 解析二级 JSON
         let options = parseNestedJSON(from: queryParams)
 
-        // 解析 module / action
+        // 解析 module / action：统一小写，与注册侧（register 全部 lowercased）保持一致，
+        // 否则 bilidili://video/Play 这类混合大小写 URL 解析出的 action 匹配不到已注册路由。
         let host = components.host?.lowercased() ?? ""
         let pathComponents = components.path
             .split(separator: "/")
-            .map(String.init)
+            .map { String($0).lowercased() }
             .filter { !$0.isEmpty }
 
         let (module, action) = resolveModuleAction(host: host, pathComponents: pathComponents)

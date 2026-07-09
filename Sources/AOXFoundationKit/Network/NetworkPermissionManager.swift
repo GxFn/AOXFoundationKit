@@ -20,8 +20,15 @@ public final class NetworkPermissionManager: @unchecked Sendable {
 
     private static let firstLaunchKey = "AOXNetworkPermissionFirstLaunchHandled"
 
-    /// 当前网络权限状态
-    public private(set) var permissionState: NetworkPermissionState = .unknown
+    // permissionState / permissionChangeHandler 会被 CTCellularData 回调（可能非主线程）、
+    // checkPermission（调用方线程）、asyncAfter（主线程）并发读写，统一用 lock 保护。
+    private let lock = NSLock()
+    private var _permissionState: NetworkPermissionState = .unknown
+
+    /// 当前网络权限状态（对外只读；内部经 lock 通过 _permissionState 更新）
+    public var permissionState: NetworkPermissionState {
+        lock.withLock { _permissionState }
+    }
 
     /// 是否已处理过首次安装的权限请求
     public var hasHandledFirstLaunch: Bool {
@@ -29,7 +36,7 @@ public final class NetworkPermissionManager: @unchecked Sendable {
     }
 
     private let cellularData = CTCellularData()
-    private var permissionChangeHandler: (@Sendable (NetworkPermissionState) -> Void)?
+    private var _permissionChangeHandler: (@Sendable (NetworkPermissionState) -> Void)?
 
     private init() {
         // 设置权限状态变化监听
@@ -101,17 +108,21 @@ public final class NetworkPermissionManager: @unchecked Sendable {
         UserDefaults.standard.set(true, forKey: Self.firstLaunchKey)
     }
 
-    /// 监听权限状态变化
+    /// 监听权限状态变化（单一观察者，后注册覆盖前者）
     public func observePermissionStateChange(_ handler: @escaping @Sendable (NetworkPermissionState) -> Void) {
-        self.permissionChangeHandler = handler
+        lock.withLock { _permissionChangeHandler = handler }
     }
 
     // MARK: - Private
 
     private func updateStateIfNeeded(_ newState: NetworkPermissionState) {
-        guard permissionState != newState else { return }
-        permissionState = newState
-        permissionChangeHandler?(newState)
+        // 在锁内判断+更新+取出 handler，锁外回调（避免 handler 内再访问本类造成重入死锁）
+        let handler: (@Sendable (NetworkPermissionState) -> Void)? = lock.withLock {
+            guard _permissionState != newState else { return nil }
+            _permissionState = newState
+            return _permissionChangeHandler
+        }
+        handler?(newState)
     }
 
     private static func convert(_ state: CTCellularDataRestrictedState) -> NetworkPermissionState {

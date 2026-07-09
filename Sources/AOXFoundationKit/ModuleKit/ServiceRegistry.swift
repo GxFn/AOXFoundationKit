@@ -170,7 +170,7 @@ public final class ServiceRegistry: @unchecked Sendable {
     public func resolveOptional<T>(_ type: T.Type, tag: String) -> T? {
         let key = _taggedKey(type, tag: tag)
         return lock.withLock {
-            _resolveEntry(key: key, entries: &taggedEntries)
+            _resolveEntry(key: key, tagged: true)
         }
     }
 
@@ -236,14 +236,21 @@ public final class ServiceRegistry: @unchecked Sendable {
             // 别名解析
             let resolvedKey = aliases[key] ?? key
 
-            return _resolveEntry(key: resolvedKey, entries: &entries)
+            return _resolveEntry(key: resolvedKey, tagged: false)
         }
     }
 
-    /// 从指定注册表中解析条目
+    /// 从主表或 tagged 表中解析条目
     /// - 调用时 lock 必须已持有
-    private func _resolveEntry<T>(key: String, entries: inout [String: Entry]) -> T? {
-        guard var entry = entries[key] else { return nil }
+    ///
+    /// 关键：**不能**把存储字典以 `inout` 传入并在其访问期内调用 `factory()`。
+    /// 旧实现 `_resolveEntry(key:, entries: &self.entries)` 会让对 `self.entries` 的
+    /// 独占写访问持续到 factory() 返回；一旦 factory 内部再次 `resolve`（本类主打的嵌套依赖，
+    /// 如 "A resolve B，B 的 factory 又 resolve C"）就会再次 `&self.entries`，与外层未结束的
+    /// inout 访问重叠，触发 Swift 存储属性的动态独占性 trap（NSRecursiveLock 只解决锁重入救不了它）。
+    /// 这里改为：先按值取出 entry（释放对字典的访问）→ 调 factory → 再单独写回。
+    private func _resolveEntry<T>(key: String, tagged: Bool) -> T? {
+        guard var entry = (tagged ? taggedEntries[key] : entries[key]) else { return nil }
 
         #if DEBUG
         // 循环依赖检测
@@ -262,9 +269,14 @@ public final class ServiceRegistry: @unchecked Sendable {
             if let cached = entry.instance as? T {
                 return cached
             }
+            // 此处对字典的读访问已结束（entry 是值类型副本），factory() 内可安全嵌套 resolve。
             let instance = entry.factory()
             entry.instance = instance
-            entries[key] = entry
+            if tagged {
+                taggedEntries[key] = entry
+            } else {
+                entries[key] = entry
+            }
             return instance as? T
 
         case .transient:
