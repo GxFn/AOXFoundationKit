@@ -202,16 +202,24 @@ public final class ModuleManager {
 
         systemEventObservers = [
             nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.broadcast(ModuleEvent(name: "applicationDidBecomeActive"))
+                Task { @MainActor [weak self] in
+                    self?.broadcast(ModuleEvent(name: "applicationDidBecomeActive"))
+                }
             },
             nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.broadcast(ModuleEvent(name: "applicationDidEnterBackground"))
+                Task { @MainActor [weak self] in
+                    self?.broadcast(ModuleEvent(name: "applicationDidEnterBackground"))
+                }
             },
             nc.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.tearDownAll()
+                Task { @MainActor [weak self] in
+                    self?.tearDownAll()
+                }
             },
             nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.broadcast(ModuleEvent(name: "didReceiveMemoryWarning"))
+                Task { @MainActor [weak self] in
+                    self?.broadcast(ModuleEvent(name: "didReceiveMemoryWarning"))
+                }
             },
         ]
 

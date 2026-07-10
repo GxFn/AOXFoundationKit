@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - App Environment
 
@@ -54,17 +55,18 @@ public enum AppEnvironment: String, Sendable {
         }
     }
 
-    /// 当前 API 配置（宿主 App 必须在启动时调用 `configure(apiConfig:)` 设置）
-    private nonisolated(unsafe) static var _apiConfig: APIConfig?
+    /// 当前 API 配置（宿主 App 必须在启动时调用 `configure(apiConfig:)` 设置）。
+    /// App 启动写入与 Package 测试/后台请求读取可能跨线程，不能依赖“通常只配置一次”的假设。
+    private static let apiConfigState = OSAllocatedUnfairLock<APIConfig?>(initialState: nil)
 
     /// 配置 API 基础 URL
     public static func configure(apiConfig: APIConfig) {
-        _apiConfig = apiConfig
+        apiConfigState.withLock { $0 = apiConfig }
     }
 
     /// API 基础 URL
     public var apiBaseURL: String {
-        guard let config = Self._apiConfig else {
+        guard let config = Self.apiConfigState.withLock({ $0 }) else {
             fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing apiBaseURL")
         }
         return config.apiBaseURL
@@ -72,7 +74,7 @@ public enum AppEnvironment: String, Sendable {
 
     /// App API 基础 URL
     public var appBaseURL: String {
-        guard let config = Self._apiConfig else {
+        guard let config = Self.apiConfigState.withLock({ $0 }) else {
             fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing appBaseURL")
         }
         return config.appBaseURL
@@ -80,7 +82,7 @@ public enum AppEnvironment: String, Sendable {
 
     /// 直播 API 基础 URL
     public var liveBaseURL: String {
-        guard let config = Self._apiConfig else {
+        guard let config = Self.apiConfigState.withLock({ $0 }) else {
             fatalError("AppEnvironment.configure(apiConfig:) must be called before accessing liveBaseURL")
         }
         return config.liveBaseURL
