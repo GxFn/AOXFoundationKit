@@ -12,5 +12,10 @@ let package = Package(
             name: "AOXFoundationKit",
             path: "Sources/AOXFoundationKit"
         ),
+        .testTarget(
+            name: "AOXFoundationKitTests",
+            dependencies: ["AOXFoundationKit"],
+            path: "Tests/AOXFoundationKitTests"
+        ),
     ]
 )
