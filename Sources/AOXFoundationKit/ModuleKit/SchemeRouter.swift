@@ -182,13 +182,15 @@ public final class SchemeRouter {
     ) async -> RouteResult {
         // 递归深度检查
         guard depth < maxDispatchDepth else {
-            Self.logger.error("❌ 路由递归分发超过 \(self.maxDispatchDepth) 层，中止: \(url.absoluteString)")
+            Self.logger.error(
+                "❌ 路由递归分发超过 \(self.maxDispatchDepth) 层，中止: \(Self.logDescriptor(for: url))"
+            )
             return .failure(.handlerError("递归分发深度超限"))
         }
 
         // 1. 解析 URL
         guard var route = parse(url: url, source: source, userInfo: userInfo) else {
-            let result: RouteResult = .failure(.invalidURL(url.absoluteString))
+            let result: RouteResult = .failure(.invalidURL(Self.logDescriptor(for: url)))
             return result
         }
 
@@ -201,7 +203,7 @@ public final class SchemeRouter {
         // 4. 降级处理 (backup) —— 纳入同一深度预算
         if !result.isSuccess, let backup = route.param("backup"),
            let backupURL = URL(string: backup) {
-            Self.logger.info("路由失败，执行降级: \(backup)")
+            Self.logger.info("路由失败，执行降级: target=\(Self.logDescriptor(for: backupURL))")
             return await dispatch(url: backupURL, source: source, userInfo: userInfo, depth: depth + 1)
         }
 
@@ -212,7 +214,7 @@ public final class SchemeRouter {
             if delay > 0 {
                 try? await Task.sleep(for: .seconds(delay))
             }
-            Self.logger.info("链式调起: \(next)")
+            Self.logger.info("链式调起: target=\(Self.logDescriptor(for: nextURL))")
             return await dispatch(url: nextURL, source: source, userInfo: userInfo, depth: depth + 1)
         }
 
@@ -230,7 +232,8 @@ public final class SchemeRouter {
         userInfo: [String: Any] = [:]
     ) async -> RouteResult {
         guard let url = URL(string: urlString) else {
-            return .failure(.invalidURL(urlString))
+            // 原始字符串可能含 token/query，即使解析失败也不能把它塞进可被日志打印的错误。
+            return .failure(.invalidURL("无法解析 URL"))
         }
         return await dispatch(url: url, source: source, userInfo: userInfo)
     }
@@ -306,7 +309,7 @@ public final class SchemeRouter {
         let (module, action) = resolveModuleAction(host: host, pathComponents: pathComponents)
 
         guard !module.isEmpty else {
-            Self.logger.debug("无法解析 module: \(url.absoluteString)")
+            Self.logger.debug("无法解析 module: \(Self.logDescriptor(for: url))")
             return nil
         }
 
@@ -325,21 +328,34 @@ public final class SchemeRouter {
     // MARK: - Navigation Helpers
 
     /// Push VC 到当前导航栈
-    public func pushViewController(_ vc: UIViewController, animated: Bool = true) {
+    ///
+    /// - Returns: 是否已经找到导航容器并提交了 push。调用方应据此返回真实的
+    ///   `RouteResult`，避免导航提供者尚未就绪时页面没有出现、路由却报告成功。
+    @discardableResult
+    public func pushViewController(_ vc: UIViewController, animated: Bool = true) -> Bool {
         guard let nav = navigationProvider?() else {
             Self.logger.warning("navigationProvider 未设置，无法 push")
-            return
+            return false
         }
         nav.pushViewController(vc, animated: animated)
+        return true
     }
 
     /// Present VC
-    public func presentViewController(_ vc: UIViewController, animated: Bool = true, completion: (() -> Void)? = nil) {
+    ///
+    /// - Returns: 是否已经找到展示容器并提交了 present。
+    @discardableResult
+    public func presentViewController(
+        _ vc: UIViewController,
+        animated: Bool = true,
+        completion: (() -> Void)? = nil
+    ) -> Bool {
         guard let top = topViewControllerProvider?() else {
             Self.logger.warning("topViewControllerProvider 未设置，无法 present")
-            return
+            return false
         }
         top.present(vc, animated: animated, completion: completion)
+        return true
     }
 
     // MARK: - NavigationRouter Compatibility
@@ -359,7 +375,9 @@ public final class SchemeRouter {
             guard let vc = factory(params) else {
                 return .failure(.invalidParams("工厂返回 nil: \(pageName)"))
             }
-            self?.pushViewController(vc)
+            guard self?.pushViewController(vc) == true else {
+                return .failure(.noNavigationController)
+            }
             return .success(data: nil)
         }
     }
@@ -401,6 +419,15 @@ public final class SchemeRouter {
     }
 
     // MARK: - Private: Parsing Helpers
+
+    /// 路由诊断日志只保留 scheme/host/path。query 与 fragment 常携带业务参数、
+    /// token 或 CDN 签名，不能写入统一日志系统。
+    private static func logDescriptor(for url: URL) -> String {
+        let scheme = url.scheme?.lowercased() ?? "unknown-scheme"
+        let host = url.host?.lowercased() ?? "unknown-host"
+        let path = url.path.isEmpty ? "/" : url.path
+        return "\(scheme)://\(host)\(path)"
+    }
 
     private func resolveModuleAction(host: String, pathComponents: [String]) -> (module: String, action: String) {
         // 格式 1: scheme://v5/module/action (版本前缀)
