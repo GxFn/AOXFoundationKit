@@ -38,6 +38,26 @@ public final class ServiceRegistry: @unchecked Sendable {
 
     // MARK: - Types
 
+    /// 类型名只用于日志；真实身份由 metatype 与 tag 决定，避免不同模块的同名类型冲突。
+    private struct ServiceKey: Hashable, CustomStringConvertible {
+        let typeID: ObjectIdentifier
+        let typeName: String
+        let tag: String?
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.typeID == rhs.typeID && lhs.tag == rhs.tag
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(typeID)
+            hasher.combine(tag)
+        }
+
+        var description: String {
+            tag.map { "\(typeName)#\($0)" } ?? typeName
+        }
+    }
+
     private struct Entry {
         let scope: ServiceScope
         let factory: () -> Any
@@ -50,17 +70,17 @@ public final class ServiceRegistry: @unchecked Sendable {
     private let lock = NSRecursiveLock()
 
     /// 主注册表: [typeKey → Entry]
-    private var entries: [String: Entry] = [:]
+    private var entries: [ServiceKey: Entry] = [:]
 
     /// 别名表: [aliasKey → primaryKey]
-    private var aliases: [String: String] = [:]
+    private var aliases: [ServiceKey: ServiceKey] = [:]
 
     /// 命名注册: [typeKey + "#" + tag → Entry]
-    private var taggedEntries: [String: Entry] = [:]
+    private var taggedEntries: [ServiceKey: Entry] = [:]
 
     /// 循环依赖检测（仅 Debug）
     #if DEBUG
-    private var resolvingStack: Set<String> = []
+    private var resolvingStack: Set<ServiceKey> = []
     #endif
 
     private static let logger = Logger(
@@ -91,7 +111,7 @@ public final class ServiceRegistry: @unchecked Sendable {
         let key = _key(type)
         lock.withLock {
             if entries[key] != nil {
-                Self.logger.warning("⚠️ 重复注册 [\(key)]，新注册将覆盖旧注册")
+                Self.logger.warning("⚠️ 重复注册 [\(key.description)]，新注册将覆盖旧注册")
             }
             entries[key] = Entry(scope: scope, factory: factory, instance: nil)
         }
@@ -204,12 +224,12 @@ public final class ServiceRegistry: @unchecked Sendable {
 
     /// 所有已注册的类型名称
     public var registeredTypes: [String] {
-        lock.withLock { Array(entries.keys).sorted() }
+        lock.withLock { entries.keys.map(\.description).sorted() }
     }
 
     /// 所有已注册的别名
     public var registeredAliases: [(alias: String, primary: String)] {
-        lock.withLock { aliases.map { (alias: $0.key, primary: $0.value) }.sorted { $0.alias < $1.alias } }
+        lock.withLock { aliases.map { (alias: $0.key.description, primary: $0.value.description) }.sorted { $0.alias < $1.alias } }
     }
 
     /// 检查某类型是否已注册
@@ -223,15 +243,15 @@ public final class ServiceRegistry: @unchecked Sendable {
 
     // MARK: - Private
 
-    private func _key<T>(_ type: T.Type) -> String {
-        String(describing: type)
+    private func _key<T>(_ type: T.Type) -> ServiceKey {
+        ServiceKey(typeID: ObjectIdentifier(type), typeName: String(reflecting: type), tag: nil)
     }
 
-    private func _taggedKey<T>(_ type: T.Type, tag: String) -> String {
-        "\(String(describing: type))#\(tag)"
+    private func _taggedKey<T>(_ type: T.Type, tag: String) -> ServiceKey {
+        ServiceKey(typeID: ObjectIdentifier(type), typeName: String(reflecting: type), tag: tag)
     }
 
-    private func _resolve<T>(key: String) -> T? {
+    private func _resolve<T>(key: ServiceKey) -> T? {
         lock.withLock {
             // 别名解析
             let resolvedKey = aliases[key] ?? key
@@ -249,7 +269,7 @@ public final class ServiceRegistry: @unchecked Sendable {
     /// 如 "A resolve B，B 的 factory 又 resolve C"）就会再次 `&self.entries`，与外层未结束的
     /// inout 访问重叠，触发 Swift 存储属性的动态独占性 trap（NSRecursiveLock 只解决锁重入救不了它）。
     /// 这里改为：先按值取出 entry（释放对字典的访问）→ 调 factory → 再单独写回。
-    private func _resolveEntry<T>(key: String, tagged: Bool) -> T? {
+    private func _resolveEntry<T>(key: ServiceKey, tagged: Bool) -> T? {
         guard var entry = (tagged ? taggedEntries[key] : entries[key]) else { return nil }
 
         #if DEBUG
@@ -257,7 +277,7 @@ public final class ServiceRegistry: @unchecked Sendable {
         if resolvingStack.contains(key) {
             fatalError("""
             ❌ ServiceRegistry 检测到循环依赖!
-            解析链: \(resolvingStack.joined(separator: " → ")) → \(key)
+            解析链: \(resolvingStack.map(\.description).joined(separator: " → ")) → \(key)
             """)
         }
         resolvingStack.insert(key)

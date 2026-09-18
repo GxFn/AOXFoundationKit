@@ -180,6 +180,12 @@ public final class SchemeRouter {
         userInfo: [String: Any],
         depth: Int
     ) async -> RouteResult {
+        // 取消属于当前调用链的终止条件，不能再触发原 handler、backup 或 next。
+        guard !Task.isCancelled else {
+            Self.logger.info("路由已取消，停止分发: depth=\(depth)")
+            return .failure(.cancelled)
+        }
+
         // 递归深度检查
         guard depth < maxDispatchDepth else {
             Self.logger.error(
@@ -199,6 +205,12 @@ public final class SchemeRouter {
 
         // 3. 执行中间件链 + 最终分发
         let result = await executeMiddlewareChain(route: &route, index: 0)
+        guard !Task.isCancelled else {
+            Self.logger.info("路由中间件执行期间已取消，停止后续链: depth=\(depth)")
+            let cancelled: RouteResult = .failure(.cancelled)
+            notifyObservers(route: route, result: cancelled)
+            return cancelled
+        }
 
         // 4. 降级处理 (backup) —— 纳入同一深度预算
         if !result.isSuccess, let backup = route.param("backup"),
@@ -211,8 +223,22 @@ public final class SchemeRouter {
         if result.isSuccess, let next = route.param("next"),
            let nextURL = URL(string: next) {
             let delay = Double(route.param("delaytime") ?? "") ?? 0.35
+            // 外部 URL 可携带 inf/NaN/极大指数，Duration.seconds 转换会溢出；拒绝无效输入，
+            // 不缩短合法的延时跳转。Int64 秒上界同时约束底层 clock deadline 的可表达范围。
+            guard delay.isFinite, delay < Double(Int64.max) else {
+                Self.logger.warning("链式路由延时不可表示，停止 next")
+                return .failure(.invalidParams("delaytime 必须是可表示的有限秒数"))
+            }
             if delay > 0 {
-                try? await Task.sleep(for: .seconds(delay))
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    // Task.sleep 的取消不能被吞掉，否则取消操作会把延迟跳转变成立即跳转。
+                    Self.logger.info("链式路由等待已取消，停止 next: depth=\(depth)")
+                    let cancelled: RouteResult = .failure(.cancelled)
+                    notifyObservers(route: route, result: cancelled)
+                    return cancelled
+                }
             }
             Self.logger.info("链式调起: target=\(Self.logDescriptor(for: nextURL))")
             return await dispatch(url: nextURL, source: source, userInfo: userInfo, depth: depth + 1)
@@ -290,9 +316,17 @@ public final class SchemeRouter {
 
         // 解析 query
         var queryParams: [String: String] = [:]
-        for item in components.queryItems ?? [] {
-            let value = item.value?.replacingOccurrences(of: "+", with: " ") ?? ""
-            queryParams[item.name] = value
+        for item in components.percentEncodedQueryItems ?? [] {
+            // 保留历史 form query 的裸 + 空格语义，但必须在百分号解码前处理；
+            // 若对已解码的 queryItems 替换，会把 %2B 表示的字面加号一并破坏。
+            guard let name = item.name.removingPercentEncoding,
+                  let value = (item.value ?? "")
+                    .replacingOccurrences(of: "+", with: " ")
+                    .removingPercentEncoding else {
+                Self.logger.warning("路由 query 解码失败，拒绝不完整参数")
+                return nil
+            }
+            queryParams[name] = value
         }
 
         // 解析二级 JSON
@@ -481,6 +515,10 @@ public final class SchemeRouter {
     // MARK: - Private: Middleware Chain
 
     private func executeMiddlewareChain(route: inout SchemeRoute, index: Int) async -> RouteResult {
+        guard !Task.isCancelled else {
+            Self.logger.info("路由取消，停止中间件/handler 分发: index=\(index)")
+            return .failure(.cancelled)
+        }
         if index < middlewares.count {
             let middleware = middlewares[index]
             return await middleware.process(route: &route) { [self] innerRoute in

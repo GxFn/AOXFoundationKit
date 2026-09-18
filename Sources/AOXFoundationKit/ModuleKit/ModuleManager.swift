@@ -25,6 +25,8 @@ public final class ModuleManager {
     // MARK: - Properties
 
     private var modules: [any AppModule] = []
+    /// 三个注册入口共用模块身份集合；隐私阶段重入或切换到 registerAll 也只注册一次。
+    private var registeredModuleIDs: Set<ObjectIdentifier> = []
     private var isRegistered = false
     private var isInitialized = false
     private(set) public var context: AppContext?
@@ -94,6 +96,10 @@ public final class ModuleManager {
 
         for module in modules {
             let name = String(describing: type(of: module))
+            guard registeredModuleIDs.insert(ObjectIdentifier(module)).inserted else {
+                Self.logger.debug("[\(name)] 已完成注册，跳过重复 registerAll")
+                continue
+            }
             let state = Self.signposter.beginInterval("register", "\(name)")
             let start = CFAbsoluteTimeGetCurrent()
 
@@ -158,6 +164,10 @@ public final class ModuleManager {
 
         for module in modules where type(of: module).supportsPrivacyMode {
             let name = String(describing: type(of: module))
+            guard registeredModuleIDs.insert(ObjectIdentifier(module)).inserted else {
+                Self.logger.debug("[\(name)] 已完成隐私阶段注册，忽略重复调用")
+                continue
+            }
             module.register(context: context)
             Self.logger.info("[\(name)] privacy register")
         }
@@ -165,11 +175,23 @@ public final class ModuleManager {
 
     /// 用户同意隐私协议后：注册剩余模块
     public func registerRemainingModules() {
-        guard let context else { return }
+        guard !isRegistered else {
+            Self.logger.debug("全部模块已注册，忽略重复 post-privacy 调用")
+            return
+        }
+        guard let context else {
+            Self.logger.warning("post-privacy 注册缺少 AppContext，等待隐私阶段入口")
+            return
+        }
         isRegistered = true
 
-        for module in modules where !type(of: module).supportsPrivacyMode {
+        // “剩余”按真实注册状态判断；隐私阶段之后补充的安全模块也不能漏注册。
+        for module in modules {
             let name = String(describing: type(of: module))
+            guard registeredModuleIDs.insert(ObjectIdentifier(module)).inserted else {
+                Self.logger.debug("[\(name)] 已完成注册，跳过 post-privacy 重复项")
+                continue
+            }
             module.register(context: context)
             Self.logger.info("[\(name)] register (post-privacy)")
         }
@@ -268,6 +290,7 @@ public final class ModuleManager {
         stopSystemEventForwarding()
         tearDownAll()
         modules.removeAll()
+        registeredModuleIDs.removeAll()
         context = nil
         isRegistered = false
         isInitialized = false

@@ -26,6 +26,7 @@ public enum RouteError: Error, CustomStringConvertible, Sendable {
     case invalidParams(String)
     case handlerError(String)
     case noNavigationController
+    case cancelled
 
     public var description: String {
         switch self {
@@ -37,6 +38,7 @@ public enum RouteError: Error, CustomStringConvertible, Sendable {
         case .invalidParams(let p): return "参数无效: \(p)"
         case .handlerError(let e): return "处理器错误: \(e)"
         case .noNavigationController: return "未找到 NavigationController"
+        case .cancelled: return "路由已取消"
         }
     }
 }
